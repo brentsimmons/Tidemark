@@ -15,12 +15,10 @@ import Foundation
 	// remain non-nil.
 	var weakRefs: [WeakNode] = []
 
-	autoreleasepool {
-		for _ in 0..<10 {
-			let doc = Parser.parse("Hello *world* with [link](http://example.com) and `code`.")
-			weakRefs.append(WeakNode(doc))
-			doc.destroy()
-		}
+	for _ in 0..<10 {
+		let doc = Parser.parse("Hello *world* with [link](http://example.com) and `code`.")
+		weakRefs.append(WeakNode(doc))
+		doc.destroy()
 	}
 
 	let survivors = weakRefs.compactMap { $0.node }.count
@@ -33,12 +31,10 @@ import Foundation
 	// all cycles so they can be freed.
 	var weakRefs: [WeakNode] = []
 
-	autoreleasepool {
-		for _ in 0..<10 {
-			let doc = Parser.parse("This *has* **many** *emphasis* **markers** and _underscores_ too.")
-			weakRefs.append(WeakNode(doc))
-			doc.destroy()
-		}
+	for _ in 0..<10 {
+		let doc = Parser.parse("This *has* **many** *emphasis* **markers** and _underscores_ too.")
+		weakRefs.append(WeakNode(doc))
+		doc.destroy()
 	}
 
 	let survivors = weakRefs.compactMap { $0.node }.count
