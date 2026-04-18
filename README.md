@@ -2,7 +2,7 @@
 
 Tidemark parses and renders Markdown. Original Markdown, with no extensions.
 
-It’s available as a Swift Package Manager (SPM) package.
+It’s available as a Swift Package Manager (SPM) package. Requires Swift 6.2. Runs on Mac and Linux.
 
 ## Security
 
