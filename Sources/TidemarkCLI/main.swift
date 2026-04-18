@@ -33,7 +33,7 @@ for arg in args {
 		continue // Already our default behavior
 	}
 	if arg.hasPrefix("--") {
-		fputs("Unknown option: \(arg)\n", stderr)
+		writeStderr("Unknown option: \(arg)\n")
 		printUsage()
 		exit(1)
 	}
@@ -49,7 +49,7 @@ if filePaths.isEmpty {
 } else {
 	for path in filePaths {
 		guard let data = FileManager.default.contents(atPath: path) else {
-			fputs("Error: could not read \(path)\n", stderr)
+			writeStderr("Error: could not read \(path)\n")
 			exit(1)
 		}
 		let bytes = Array(data)
@@ -59,8 +59,12 @@ if filePaths.isEmpty {
 
 // MARK: - Helpers
 
+func writeStderr(_ string: String) {
+	FileHandle.standardError.write(Data(string.utf8))
+}
+
 func printUsage() {
-	fputs("""
+	writeStderr("""
 	Usage: tidemark [options] [file ...]
 
 	Options:
@@ -71,5 +75,5 @@ func printUsage() {
 
 	With no file arguments, reads from standard input.
 
-	""", stderr)
+	""")
 }

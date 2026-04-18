@@ -8,9 +8,13 @@
 import Foundation
 import Tidemark
 
+func writeStderr(_ string: String) {
+	FileHandle.standardError.write(Data(string.utf8))
+}
+
 let args = CommandLine.arguments
 guard args.count >= 3 else {
-	fputs("Usage: benchmark <iterations> <file> [file...]\n", stderr)
+	writeStderr("Usage: benchmark <iterations> <file> [file...]\n")
 	exit(1)
 }
 
@@ -19,7 +23,7 @@ let iterations = max(Int(args[1]) ?? 1000, 1)
 for i in 2..<args.count {
 	let path = args[i]
 	guard let data = FileManager.default.contents(atPath: path) else {
-		fputs("Could not open: \(path)\n", stderr)
+		writeStderr("Could not open: \(path)\n")
 		continue
 	}
 
