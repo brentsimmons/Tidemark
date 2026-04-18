@@ -1,0 +1,42 @@
+# Tidemark SwiftLint Configuration
+
+excluded:
+  - .build
+
+# Allow short variable names common in byte-scanning/parser code.
+# In tight scanning loops, `c` (character/byte) and `i` (index)
+# are clearer than verbose alternatives.
+identifier_name:
+  min_length: 1
+
+# Parser files are necessarily large — the logic can't be split
+# without fragmenting the state machine.
+type_body_length:
+  warning: 700
+  error: 1000
+
+file_length:
+  warning: 1200
+  error: 1500
+
+# Parser functions are necessarily long — a tokenizer dispatch
+# or emphasis-matching algorithm can't be meaningfully split.
+function_body_length:
+  warning: 100
+  error: 200
+
+# Cyclomatic complexity is inherently high in parser dispatch
+# methods (e.g., renderNode, scanLineStart).
+cyclomatic_complexity:
+  warning: 25
+  error: 40
+
+# Scanners work at the byte level with long lines of conditions.
+line_length:
+  warning: 150
+  error: 200
+
+# String(decoding:as:) is the correct initializer for known-valid
+# UTF-8 bytes; the failable version is not needed here.
+disabled_rules:
+  - optional_data_string_conversion

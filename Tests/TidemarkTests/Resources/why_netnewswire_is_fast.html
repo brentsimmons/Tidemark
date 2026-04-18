@@ -1,0 +1,107 @@
+<p>NetNewsWire is fast because performance is one of our core values. <em>Being fast</em> is part of the very definition of the app.
+
+<p>I suspect that it’s hard to do this any other way. If you take a month or two to speed things up, from time to time, your app will always be — at best — just kind of heading toward satisfactory, but never to arrive.
+
+<p>The best general advice I can give is just this: make sure performance is part of the foundation of your app. Make sure it‘s part of every decision every day.
+
+<p>Make sure, in other words, that performance isn’t just a topping — it’s the pizza.
+
+<p>Below are some of the specific reasons NetNewsWire is fast. Because NetNewsWire is — like many apps these days — basically a fancy database browser where data comes from the web, some of these will apply to other apps.
+
+<p>The below items are in no particular order.
+
+<h4>Fast RSS and Atom Parsing</h4>
+
+<p>The most painful way to parse XML is with a SAX parser — but it’s also how you’ll get the best performance and use the least memory. So we use SAX in our <a href="https://github.com/Ranchero-Software/RSParser">RSParser framework</a>.
+
+<p>On my 2012 iMac, parsing a local copy of some past instance of the Daring Fireball Atom feed — relatively large at 112K in size — happens in 0.009 seconds.
+
+<p>That’s fast, but we do another thing as well: run the parser in the background on a serial queue. Since parsing is a self-contained operation — we input some data and get back objects — there are no threading issues.
+
+<h4>Conditional GET and Content Hashes</h4>
+
+<p>The parsers are fast — but we also do our best to skip parsing entirely when we can. There are two ways we do that.
+
+<p>We use <a href="https://fishbowl.pastiche.org/2002/10/21/http_conditional_get_for_rss_hackers">conditional GET</a>, which gives the server the chance to respond with a 304 Not Modified, and no content, when a feed hasn’t changed since the last time we asked for it. We skip parsing in this case, obviously.
+
+<p>We also create a hash of the raw feed content whenever we download a feed. If the hash matches the hash from the last time, then we know the content hasn’t been modified, and we skip parsing.
+
+<h4>Serial Queues</h4>
+
+<p>The parser isn’t the only code we run on a serial queue. When an operation can be made self-contained — when it can just do a thing and then call back to the main thread, without threading issues — we use a serial queue if there’s any chance it could noticeably block the main thread.
+
+<p>The key is, of course, making sure your operations are in fact self-contained. They shouldn’t trigger KVO or other kinds of notifications as they do their work.
+
+<p>(A simple example of a background thing, besides feed parsing, is creating thumbnails of feed icons.)
+
+<h4>We Avoid the Single-Change-Plus-Notifications Trap</h4>
+
+<p>Here’s an example of a trap that’s easy to fall into. Say a user is marking an article as read. Calling <code>article.read = true</code> triggers, via KVO or notifications or something, things like database updates, user interface updates, unread count updating, undo stack maintenance, etc.
+
+<p>Now say you’re marking all articles in the current timeline as read. You could call <code>article.read = true</code> for each article — and, for each article, trigger a whole bunch of work. This can be very, very slow.
+
+<p>We have specific APIs for actions like this, and those APIs expect a collection of objects. The same API that marks a single article as read is used to mark 10,000 articles as read. This way the database is updated once, the unread counts are updated once, and we push just one action on the undo stack.
+
+<h4>Coalescing</h4>
+
+<p>We also try to coalesce other kinds of work. For instance, during a refresh, the app could recalculate the unread count on every single change — but this could mean a ton of work.
+
+<p>So, instead, we coalesce these — we make it so that recalculating unread counts happens not more often than once every 0.25 seconds (for instance). This can make a huge difference.
+
+<h4>Custom Database</h4>
+
+<p>For an app that is, again, just a fancy database browser, this is where the whole thing can be won or lost.
+
+<p>While Core Data is great, we use SQLite more directly, via <a href="https://github.com/ccgus/fmdb">FMDB</a>, because this gives us the ability to treat our database as a database. We can optimize our schema, indexes, and queries in ways that are outside the scope of Core Data. (Remember that Core Data manages a graph of objects: it’s not a database.)
+
+<p>We use various tools — such as <a href="https://sqlite.org/eqp.html">EXPLAIN QUERY PLAN</a> — to make sure we’ve made fetching, counting, and updating fast and efficient.
+
+<p>We do our own caching. We run the database on a serial queue so we don’t block the main thread. We use structs instead of classes, as much as possible, for model objects. (Not sure that matters to performance: we just happen to like structs.)
+
+<p>To make searching fast, we use SQLite’s <a href="https://www.sqlite.org/fts5.html">Full Text Search extension</a>.
+
+<p>I could, and probably should, write more articles going into details here. The database work, more than anything else, is why NetNewsWire is fast.
+
+<h4>Sets and Dictionaries</h4>
+
+<p>We often need to look up things — a feed, given its feedID, for instance — and so we use dictionaries frequently. This is quite common in Mac and iOS programming.
+
+<p>What I suspect is less common is use of <em>sets</em>. The set is our default collection type — we never want to check to see if an array contains something, and we never want to deal with duplicate objects. These can be performance-killers.
+
+<p>We use arrays when some API requires an array or when we need an ordered collection (usually for the UI).
+
+<h4>Profiler</h4>
+
+<p>Instead of guessing at what’s slow, we use the profiler in Instruments to find out exactly what’s slow.
+
+<p>The profiler is often surprising! Here’s one thing we found that we didn’t expect: hashing some of our objects was, at one point, pretty slow.
+
+<p>Because we use sets quite a lot, there’s a whole lot of hashing going on. We were using synthesized equality and hashability on some objects with lots of string properties — and, it turns out, hashing strings is pretty darn slow.
+
+<p>So, instead, we wrote our own hash function for these objects. In many cases we could hash just one string property — an article ID, for instance — instead of five or ten or more.
+
+<h4>No Stack Views</h4>
+
+<p>My experience with stack views tells me that they’re excruciatingly slow. They’re just not allowed.
+
+<h4>No Auto Layout in Table Cell Views</h4>
+
+<p>When people praise a timeline-based app like NetNewsWire, they often say something like “It scrolls like butter!” (I imagine butter as not actually scrolling well <em>at all</em>, but, yes, I get that butter is smooth.)
+
+<p>While we use Auto Layout plenty — it’s cool, and we like it — we don’t allow it inside table cell views. Instead, we write our own layout code.
+
+<p>This is not actually difficult. Maybe a little tedious, but laying out a table cell view is pretty easy, really.
+
+<p>I figure that optimized manual layout code is always going to be faster than a constraint solver, and that gives us an edge in smooth scrolling — and this is one of the places where an otherwise good app can fall on its face.
+
+<p>And: because that layout code doesn’t need a view (just an article object and a width), we can run it at any time. We use that same code to determine the height of rows without having to run an Auto Layout pass.
+
+<h4>Caching String Sizes</h4>
+
+<p>Text measurement is slow — slow enough to make even manual layout too slow. In NetNewsWire we do some smart things with <a href="https://inessential.com/2019/07/26/a_couple_handy_tricks_for_text_measureme">caching text measurement</a>.
+
+<p>For example: if we know that a given string is 20pts tall when the available width is 100 and when the available width is 200, we can tell, without measuring, that it will be 20pts tall when the available width is 150.
+
+<h4>Summary</h4>
+
+<p>There’s no silver bullet. Making an app fast means doing a bunch of different things — and it means paying attention to performance continuously. 🍕

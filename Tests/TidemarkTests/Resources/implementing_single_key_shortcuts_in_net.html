@@ -1,0 +1,149 @@
+<p>NetNewsWire supports using single-key shortcuts for some commands: the <code>k</code> key marks all as read, for instance. The space bar scrolls the current article, or goes to the next unread if there’s nothing more to scroll.
+
+<p>There are a bunch of these, and they’re documented: see NetNewsWire Help menu > Keyboard Shortcuts.
+
+<p>These kinds of shortcuts are fairly rare in Mac apps, and rightly so — they’re best for apps where power users might need to process a bunch of stuff and move around quickly. That doesn’t describe every app (thank goodness!).
+
+<p>Since this isn’t really a standard AppKit thing, you might wonder how I implemented this in NetNewsWire.
+
+<h4>Getting keyboard events</h4>
+
+<p>You have to override <code>keyDown(with event: NSEvent)</code> — so NetNewsWire has subclasses such as <a href="https://github.com/brentsimmons/NetNewsWire/blob/master/NetNewsWire/MainWindow/Sidebar/SidebarOutlineView.swift">SidebarOutlineView</a> in order to get keyboard events.
+
+<p>I <em>could</em>, if I wanted, just get the character from the event and do a <code>switch</code> statement with code like this:
+
+<pre><code>case 'k':
+	markAllAsRead()
+</code></pre>
+
+<p>This gets ugly pretty quickly, and, importantly, I plan to make keyboard shortcuts customizable (at some point), so I chose a different path.
+
+<h4>Property List Files</h4>
+
+<p>If they’re customizable, then the specifiers need to be stored in some data format. Property lists (plists) are a good choice, since they’re easy to read and edit in Xcode.
+
+<p>Now, I’m not making them customizable yet, but I figured it would be smart to use the same format and implementation for the default sets of shortcuts.
+
+<h4>Inside the plists</h4>
+
+<p>There are a few plist files: one for global shortcuts, one for the sidebar, one for the timeline, etc. (I could have made just one file, but I didn’t. Doesn’t matter.)
+
+<p>Each file contains an array of shortcuts; each shortcut has a <code>key</code> and an <code>action</code>. The key is the actual key, such as <code>k</code> or <code>'</code> — or a placeholder such as <code>[rightarrow]</code> where the actual key couldn’t be listed in the plist. (The app translates placeholders into their actual values.)
+
+<p>A shortcut may also have one or more modifiers, and those are represented as booleans: <code>shiftModifier</code>, for instance. This way we can differentiate between the space key and shift-space.
+
+<p>The <code>action</code> part is a string specifying which method to call for the given shortcut.
+
+<p>Here’s an <a href="https://github.com/brentsimmons/NetNewsWire/blob/master/NetNewsWire/MainWindow/Keyboard/GlobalKeyboardShortcuts.plist">example of one of those files</a>.
+
+<h4>The keyDown implementation</h4>
+
+<p><code>SidebarOutlineView </code> overrides <code>keydown</code>:
+
+<pre><code>override func keyDown(with event: NSEvent) {
+	if keyboardDelegate.keydown(event, in: self) {
+		return
+	}
+	super.keyDown(with: event)
+}
+</code></pre>
+
+<p>The <code>keyboardDelegate</code> gets the first shot at handling the key. If it doesn’t handle it, then normal processing continues.
+
+<h4>SidebarKeyboardDelegate</h4>
+
+<p>There are several keyboard delegates, but let’s look at <a href="https://github.com/brentsimmons/NetNewsWire/blob/master/NetNewsWire/MainWindow/Sidebar/Keyboard/SidebarKeyboardDelegate.swift">SidebarKeyboardDelegate</a>, since these all work about the same.
+
+<p>In <code>init</code> it reads its keyboard shortcut definitions from a plist in the app bundle and creates a <code>Set&lt;KeyboardShortcut&gt;</code>. A <a href="https://github.com/brentsimmons/RSCore/blob/master/RSCore/Keyboard.swift">KeyboardShortcut</a> is a <code>KeyboardKey</code> (defined in same file) plus an action string.
+
+<p>A <code>KeyboardKey</code> describes the key, including its integer value and any combination of modifiers (shift, option, command, control).
+
+<p>In keyDown, <code>SidebarKeyboardDelegate</code> first gives <a href="https://github.com/brentsimmons/NetNewsWire/blob/master/NetNewsWire/MainWindow/Keyboard/MainWIndowKeyboardHandler.swift">MainWindowKeyboardHandler</a> a chance to handle the key. <code>MainWindowKeyboardHandler</code> handles keys that are global across views.
+
+<p>If <code>MainWindowKeyboardHandler</code> doesn’t handle it, then it looks for a <code>KeyboardShortcut</code> that matches the pressed key.
+
+<pre><code>let key = KeyboardKey(with: event)
+guard let matchingShortcut = KeyboardShortcut.findMatchingShortcut(in: shortcuts, key: key) else {
+	return false
+}
+</code></pre>
+
+<p>If it finds a matching shortcut, then it makes the shortcut do the thing it’s supposed to do:
+
+<pre><code>matchingShortcut.perform(with: view)
+</code></pre>
+
+<h4>Performing the shortcut</h4>
+
+<p>Remember that a <code>KeyboardShortcut</code> has a <code>KeyboardKey</code> and an <code>actionString</code>. That string is pulled from the plist: it’s something like <code>nextUnread:</code> or <code>openInBrowser:</code>.
+
+<p>We turn this into a selector using <code>NSSelectorFromString</code> and store it in a local variable <code>action</code>.
+
+<p>(The Objective-C runtime has a particularly beautiful thing: messages are real things, and they exist separately from objects.)
+
+<p>The <code>perform(with:)</code> method looks like this:
+
+<pre><code>public func perform(with view: NSView) {
+	let action = NSSelectorFromString(actionString)
+	NSApplication.shared.sendAction(action, to: nil, from: view)
+}
+</code></pre>
+
+<p>Here’s Apple’s documentation on <a href="https://developer.apple.com/documentation/appkit/nsapplication/1428509-sendaction">NSApplication.shared.sendAction</a>.
+
+<p>The short version of what it does: if <code>to</code> (the target) is nil, it starts with the first responder, then checks its nextResponder, then its nextResponder, and so on until it finds an object that <em>responds</em> to the specified selector (the action) — and then it asks that object to perform that method (or: it sends that message to the receiver). (It also checks the window’s delegate and some other things before giving up, when it gets that far.)
+
+<p>This means, for instance, that I don’t have to implement <code>openInBrowser:</code> in <code>SidebarOutlineView</code>. It could be implemented in its view controller, in <code>MainWindowController</code>, etc., as long as there is an implementation in the responder chain.
+
+<p>This way the implementation can be placed where it makes sense. I can even move <code>openInBrowser:</code> without needing to change the plist configuration.
+
+<p>And — this is important — it means that there might be (and there are, in NetNewsWire) <em>multiple</em> implementations of <code>openInBrowser:</code>. The sidebar has one which opens the home page of the selected feed. The timeline has a different one which opens the URL for the selected article.
+
+<p>The one that gets called is based on which one of these is the first responder, because that’s where the responder chain starts. (Which is another way of saying: the implementation that gets called is based on what thing has user focus.)
+
+<p>Both of these <code>openInBrowser:</code> commands are represented by the same <code>KeyboardShortcut</code> from the global keyboard shortcuts plist.
+
+<h4>Not Magic</h4>
+
+<p>It may seem like <code>NSApplication.shared.sendAction</code> is doing something reserved for Apple that you couldn’t do, or couldn’t do easily.
+
+<p>But you could actually write this yourself. This simple version (which just checks <code>nextResponder</code>) has all the critical bits.
+
+<pre><code>func sendAction(_ action: Selector, to target: Any?, from sender: Any?) -&gt; Bool {
+	var responder = NSApplication.shared.keyWindow?.firstResponder
+	while responder != nil {
+		if responder?.responds(to: action) ?? false {
+			responder?.perform(action, with: sender)
+			return true
+		}
+		responder = responder?.nextResponder
+	}
+	return false
+}
+</code></pre>
+
+<p>Obviously we don’t have the source to <code>NSApplication.shared.sendAction</code> — but, at least in concept, that’s all it’s doing. (Minus the part where it checks some things after exhausting <code>nextResponder</code>.)
+
+<h4>Summary</h4>
+
+<p>In a Mac app, how does the Edit menu‘s Copy command know what to do? It walks the responder chain: the first to claim that it responds to the <code>copy:</code> message then performs the <code>copy:</code> method.
+
+<p>You don’t have just one <code>copy:</code> method somewhere that has to figure out the context (figure out what has focus) and then do the right thing. Instead, you may have multiple <code>copy:</code> methods.
+
+<p>(This is much less of a thing on iOS. But when you go to use Marzipan with your iOS apps, there’s a good chance you’re going to need to know about this.)
+
+<p>The Copy command (and others) use the same pattern I’m using here, in other words.
+
+<p>It’s also worth thinking about how nibs and storyboards actually get loaded by your app. All the wired-up actions are, at some level, just strings — so the frameworks (UIKit and AppKit) use <code>NSSelectorFromString</code> to turn these strings into real messages.
+
+<p>Having an idea of how all this works under-the-hood is useful knowledge: it means you understand your app better. It also means that when you’re faced with something like implementing a keyboard shortcuts system, you’ll have the right tools for the job.
+
+<p>(Of course this isn’t the right tool for every job.)
+
+<h4>PS Try this!</h4>
+
+<p>In Xcode, set a symbolic breakpoint for <code>NSSelectorFromString</code>. Make the Action a sound. Check the box next to “Automatically continue after evaluating actions” — this way it won’t actually stop.
+
+<p>Now launch your app. Even if <em>you</em> don’t ever use this, your app sure does!
+
+<p>And, for bonus points, also set a similar breakpoint for <code>NSClassFromString</code>. Give it a different sound.

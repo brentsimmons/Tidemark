@@ -1,0 +1,117 @@
+<p>(Note: this is a data modeling and error-handling exercise. No tricky algorithms are needed.)
+
+<p>Pretend you’re writing the runtime for a language.
+
+<p>It’s a simple language with just three data types: integer, string, and table.
+
+<p>Your mean, meddling, micro-managing boss told you to use a single thing to represent values in this language, and that thing has to be named LangValue.
+
+<p>Your mean boss — who hates classes and Objective-C — also said she wants to see <em>two</em> solutions. Here are your choices:
+
+<ul>
+<li>LangValue as an enum.
+<li>LangValue as a struct.
+<li>LangValue as a protocol, with structs named LangValueInt, LangValueString, and LangValueTable that implement LangValue.
+<li>LangValue as a protocol, with extensions to the built-in Swift data types Int, String, and Dictionary that make them implement LangValue.
+</ul>
+
+<p>Pick any two.
+
+<h2>Spec</h2>
+
+<ul>
+<li>Integer and string values are immutable.
+<li>Table values are <em>not</em> immutable. Table keys must always be Swift strings. Tables may contain other tables.
+<li>A LangValue can never change its type.
+</ul>
+
+<p>The API for creation must be something like this, though not necessarily exactly like this (could be one or more init methods instead, for instance):
+
+<pre><code>LangValueWithInteger(n: Int) -&gt; LangValue
+LangValueWithString(s: String) -&gt; LangValue
+LangValueTable() -&gt; LangValue //empty table
+</code></pre>
+
+<p>LangValue API must be conceptually like this:
+
+<pre><code>type (readonly) -&gt; LangValueType.Integer, .String, or .Table
+</code></pre>
+
+<p>The following throw <code>LangCoercionError</code> for tables:
+
+<pre><code>integerValue (readonly) throws -&gt; Int
+stringValue (readonly) throws -&gt; String
+valueByAddingValue(LangValue: value) throws -&gt; LangValue
+</code></pre>
+
+<p>A String can be coerced to an Integer via whatever built-in coercion Swift (or NSString) provides. Don't sweat this. It's okay if it returns 0 in cases like "some string".
+
+<p>When a String and an Integer are being added, the Integer is coerced to a String, and the result is LangValueType.String. <code>123 + "123" == "123123"</code>
+
+<p>(In other words: though Strings can be coerced to Integers, Integers are coerced to Strings when doing automatic coercion.)
+
+<p>The following throw <code>LangCoercionError</code> when the receiver isn't a table.
+
+<pre><code>setObjectForKey(object: LangValue, key: String) throws
+removeObjectForKey(key: String) throws
+objectForKey(key: String) throws -&gt; LangValue?
+keys() throws -&gt; [String]
+</code></pre>
+
+<h2>Tests</h2>
+
+<h3>Adding values</h3>
+
+<p>This code (or the equivalent) must work:
+
+<pre><code>let s = LangValueWithString("This is a string")
+let n = LangValueWithInteger(42)
+let someValues = [s, n]
+
+func addIntegerValuesInArray(values: [LangValue]) -&gt; LangValue {
+
+	// Return LangValueType.Integer object
+	...write code here
+}
+
+func addStringValuesInArray(values: [LangValue]) -&gt; LangValue {
+
+	// Return LangValueType.String object
+	...write code here
+	}
+
+let intResult = addIntegerValuesInArray(someValues)
+assert(intResult.integerValue() == 42)
+
+let stringResult = addStringValuesInArray(someValues)
+assert(stringResult.stringValue() == "This is a string42"
+
+let unknownResult = s.valueByAddingValue(n)
+assert(unknownResult.type == .String)
+</code></pre>
+
+<h3>Tables and Sets</h3>
+
+<p>This code (or the equivalent) must also work:
+
+<pre><code>let t = LangValueTable()
+t.setObjectForKey(LangValueWithInteger(10), "SomeInt")
+let someString = LangValueWithString("Some string")
+t.setObjectForKey(someString, "SomeString")
+
+let subtable = LangValueTable()
+subtable.setObjectForKey(LangValueWithInteger(50), "SubtableInt")
+let anotherString = LangValueWithString("Another string")
+subtable.setObjectForKey(anotherString, "SubtableString")
+t.setObjectForKey(subtable, "Subtable")
+
+func recursiveSetOfStringsInTable(table: LangValue) -&gt; Set&lt;LangValue&gt; {
+	// Get all LangValueType.String objects from a table and its subtables and return them as a Swift set.
+	...write code here
+}
+
+let setOfStrings = recursiveSetOfStringsInTable(t)
+assert(setOfStrings == Set([someString, anotherString])
+</code></pre>
+
+<p>Note: The code in both tests probably needs error handling.
